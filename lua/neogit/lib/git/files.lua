@@ -24,18 +24,30 @@ function M.all_tree(opts)
   local files = git.cli["ls-tree"].full_tree.name_only.recursive.args("HEAD").call({ hidden = true }).stdout
 
   if opts.with_dir then
-    local dirs = {}
-
-    for _, path in ipairs(files) do
-      local dir = vim.fs.dirname(path) .. Path.path.sep
-      dirs[dir] = true
-    end
-
-    files = util.merge(files, vim.tbl_keys(dirs))
-    table.sort(files)
+    files = M.with_dirs(files)
   end
 
   return files
+end
+
+--- Adds every ancestor directory of the given paths (with a trailing separator), sorted.
+--- A directory holding only subdirectories is included too, so it can be picked as a pathspec.
+---@param files string[]
+---@return string[]
+function M.with_dirs(files)
+  local dirs = {}
+
+  for _, path in ipairs(files) do
+    local dir = vim.fs.dirname(path)
+    while dir ~= "." and dir ~= "" and not dirs[dir .. Path.path.sep] do
+      dirs[dir .. Path.path.sep] = true
+      dir = vim.fs.dirname(dir)
+    end
+  end
+
+  local result = util.merge(files, vim.tbl_keys(dirs))
+  table.sort(result)
+  return result
 end
 
 ---@return string[]
