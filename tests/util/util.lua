@@ -42,9 +42,10 @@ local function is_macos()
   return vim.uv.os_uname().sysname == "Darwin"
 end
 
-local function is_gnu_mktemp()
-  vim.fn.system { "bash", "-c", "mktemp --version | grep GNU" }
-  return vim.v.shell_error == 0
+-- Only BSD mktemp lacks --suffix; GNU and uutils (Ubuntu 26.04+) coreutils both take it.
+local function is_bsd_mktemp()
+  vim.fn.system { "mktemp", "--version" }
+  return vim.v.shell_error ~= 0
 end
 
 ---Create a temporary directory for use
@@ -54,11 +55,10 @@ function M.create_temp_dir(suffix)
   suffix = "neogit-" .. (suffix or "")
 
   local cmd
-  if is_gnu_mktemp() then
-    cmd = string.format("mktemp -d --suffix=%s", suffix)
-  else
-    -- assumes BSD mktemp for macos
+  if is_bsd_mktemp() then
     cmd = string.format("mktemp -d -t %s", suffix)
+  else
+    cmd = string.format("mktemp -d --suffix=%s", suffix)
   end
 
   local prefix = is_macos() and "/private" or ""
