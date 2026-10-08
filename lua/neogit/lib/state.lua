@@ -6,7 +6,8 @@ local Path = require("neogit.lib.path")
 ---@field loaded boolean
 ---@field _enabled boolean
 ---@field state table
----@field path NeogitPath
+---@field path NeogitPath|nil file of the project last synced, see M.sync()
+---@field config NeogitConfig
 local M = {}
 
 M.loaded = false
@@ -15,29 +16,60 @@ local function log(message)
   logger.debug(string.format("[STATE]: %s: '%s'", message, M.path:absolute()))
 end
 
+---The directory persisted settings are scoped to: the root of the repository neogit is
+---working on, or, outside of one, the current working directory. Resolved on every access,
+---so opening a second repository in the same session doesn't reuse the first one's settings.
+---@return string
+function M.project_dir()
+  local root = require("neogit.lib.git").repo.worktree_root
+  if root == nil or root == "" then
+    root = vim.uv.cwd()
+  end
+
+  return root
+end
+
+---@param config NeogitConfig
+---@param dir? string project directory, defaults to M.project_dir()
 ---@return NeogitPath
-function M.filepath(config)
+function M.filepath(config, dir)
   local state_path = Path:new(vim.fn.stdpath("state")):joinpath("neogit")
   local filename = "state"
 
   if config.use_per_project_settings then
-    filename = vim.uv.cwd():gsub("^(%a):", "/%1"):gsub("/", "%%"):gsub(Path.path.sep, "%%")
+    filename = (dir or M.project_dir()):gsub("^(%a):", "/%1"):gsub("/", "%%"):gsub(Path.path.sep, "%%")
   end
 
   return state_path:joinpath(filename)
 end
 
----Initializes state
+---Initializes state. The file itself is picked and read lazily, on first use.
 ---@param config NeogitConfig
 function M.setup(config)
   if M.loaded then
     return
   end
 
-  M.path = M.filepath(config)
+  M.config = config
   M._enabled = config.remember_settings
-  M.state = M.read()
+  M.path = nil
+  M.state = {}
   M.loaded = true
+end
+
+---Points state at the current project's file, re-reading it when the project changed.
+function M.sync()
+  if not M.loaded then
+    return
+  end
+
+  local path = M.filepath(M.config)
+  if M.path and M.path:absolute() == path:absolute() then
+    return
+  end
+
+  M.path = path
+  M.state = M.read()
   log("Loaded")
 end
 
@@ -93,6 +125,8 @@ function M.set(key, value)
     return
   end
 
+  M.sync()
+
   local cache_key = gen_key(key)
   if not vim.tbl_contains(config.values.ignored_settings, cache_key) then
     if value == "" then
@@ -114,6 +148,8 @@ function M.get(key, default)
     return default
   end
 
+  M.sync()
+
   local value = M.state[gen_key(key)]
   if value ~= nil then
     return value
@@ -124,6 +160,7 @@ end
 
 ---Reset current state, removing whats written to disk
 function M._reset()
+  M.sync()
   log("Reset file")
   M.path:write(vim.mpack.encode {}, "w")
   M.state = {}

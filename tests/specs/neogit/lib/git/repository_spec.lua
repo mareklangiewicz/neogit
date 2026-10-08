@@ -33,3 +33,20 @@ describe("lib.git.instance", function()
     end)
   end)
 end)
+
+describe("neogit.open without cwd", function()
+  it("prefers the repository of the current buffer's file over the cwd", function()
+    local repo_a = git_harness.prepare_repository()
+    local repo_b = git_harness.prepare_repository()
+    require("neogit").setup {}
+    vim.api.nvim_set_current_dir(repo_a)
+    vim.cmd.edit(repo_b .. "/a.txt")
+
+    require("neogit").open { "log" }
+    vim.wait(2000, function()
+      return vim.bo.filetype == "NeogitPopup"
+    end)
+
+    eq(vim.fs.normalize(repo_b), vim.fs.normalize(git_repo.instance().worktree_root))
+  end)
+end)

@@ -75,6 +75,26 @@ function M.setup(opts)
   autocmds.setup()
 end
 
+---Directory of the file in the current buffer, if it is a regular file buffer on disk.
+---@param buf? integer defaults to the current buffer
+---@return string|nil
+function M.buffer_dir(buf)
+  buf = buf or 0
+  if vim.bo[buf].buftype ~= "" then
+    return nil
+  end
+
+  local name = vim.api.nvim_buf_get_name(buf)
+  if name == "" then
+    return nil
+  end
+
+  local dir = vim.fs.dirname(vim.fs.normalize(name))
+  if vim.fn.isdirectory(dir) == 1 then
+    return dir
+  end
+end
+
 local function construct_opts(opts)
   opts = opts or {}
 
@@ -84,7 +104,15 @@ local function construct_opts(opts)
 
   if not opts.cwd then
     local git = require("neogit.lib.git")
-    opts.cwd = git.cli.worktree_root(".")
+    -- Like Snacks.git.get_root(): the repository of the file being edited wins over the cwd's.
+    local buf_dir = M.buffer_dir()
+    if buf_dir and git.cli.is_inside_worktree(buf_dir) then
+      opts.cwd = git.cli.worktree_root(buf_dir)
+    end
+
+    if not opts.cwd or opts.cwd == "" then
+      opts.cwd = git.cli.worktree_root(".")
+    end
 
     if opts.cwd == "" then
       opts.cwd = vim.uv.cwd()
